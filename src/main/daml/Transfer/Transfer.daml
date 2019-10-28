@@ -1,0 +1,172 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Transfer.Transfer where
+
+import Transfer.Notification
+import Bitcoin.Types
+
+
+data UTXOData = UTXOData
+  with
+    address     : BitcoinAddress
+    txHash      : TxHash
+    blockHeight : Int
+    outputIdx   : Int
+    value       : Satoshi
+    confirmed   : Optional Time
+    sigScript   : ScriptPubKey
+  deriving (Eq, Show)
+
+
+data TransferDetails = TransferDetails
+  with
+    operator          : Party
+    complianceOfficer : Party
+    deskHead          : Party
+    trader            : Party
+    deskName          : Text
+    amount            : Satoshi
+    address           : BitcoinAddress
+  deriving (Eq, Show)
+
+
+totalUnspentAmount : [UTXOData] -> Satoshi
+totalUnspentAmount utxos = foldl plus (Satoshi 0) $ map (\utxo -> utxo.value) utxos
+
+spendTxInputs : [ContractId UTXO] -> Update ()
+spendTxInputs utxoCids = do
+  forA utxoCids \utxoCid -> exercise utxoCid Spend
+  return ()
+
+
+template UTXO
+  with
+    operator    : Party
+    observers   : [Party]
+    utxoData    : UTXOData
+  where
+    signatory operator
+
+    observer observers
+
+    ensure utxoData.value > Satoshi 0
+
+    controller operator can
+      Spend : ()
+        do return ()
+
+
+template NewTransfer
+  with
+    transferDetails : TransferDetails
+    signingParty    : Party
+    txInputs        : [UTXOData]
+    txInputUtxoCids : [ContractId UTXO]
+    fee             : Satoshi
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+      && totalUnspentAmount txInputs >= transferDetails.amount `plus` fee
+
+    controller signingParty can
+      SignTransfer : ContractId SignedTransfer
+        with
+          rawTx : RawTx
+        do
+          create SignedTransfer
+            with
+              ..
+
+
+template SignedTransfer
+  with
+    transferDetails : TransferDetails
+    signingParty    : Party
+    rawTx           : RawTx
+    txInputUtxoCids : [ContractId UTXO]
+  where
+    signatory signingParty, transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller transferDetails.trader can
+      Confirm : ContractId PendingTransfer
+        do
+          create PendingTransfer with ..
+
+
+template PendingTransfer
+  with
+    transferDetails : TransferDetails
+    signingParty    : Party
+    rawTx           : RawTx
+    txInputUtxoCids : [ContractId UTXO]
+  where
+    signatory signingParty, transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller transferDetails.operator can
+      Transmit : ContractId TransmittedTransfer
+        with
+          message : Text
+        do
+          timeNow <- getTime
+
+          create Notification
+            with
+              sender    = transferDetails.operator
+              text      = message
+              observers = [transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader]
+              timeStamp = timeNow
+
+          spendTxInputs txInputUtxoCids
+
+          create TransmittedTransfer
+            with
+              ..
+
+      Fail : ContractId FailedTransfer
+        with
+          message   : Text
+        do
+          timeNow <- getTime
+
+          create Notification
+            with
+              sender    = transferDetails.operator
+              text      = message
+              observers = [transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader]
+              timeStamp = timeNow
+
+          create FailedTransfer
+            with
+              ..
+
+
+template TransmittedTransfer
+  with
+    transferDetails : TransferDetails
+    signingParty    : Party
+    rawTx           : RawTx
+  where
+    signatory signingParty, transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+
+template FailedTransfer
+  with
+    transferDetails : TransferDetails
+    signingParty    : Party
+    rawTx           : RawTx
+  where
+    signatory signingParty, transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0

@@ -1,0 +1,21 @@
+#
+# Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+sdk-version: 0.13.30
+name: inventory-management
+source: src/main/daml/Test/Test.daml
+scenario: Test.Test:onboarding
+parties:
+  - Operator
+  - Trader1
+  - Trader2
+  - DeskHead
+  - ComplianceOfficer
+  - SigningParty
+version: 1.0.0
+exposed-modules: []
+dependencies:
+  - daml-prim
+  - daml-stdlib

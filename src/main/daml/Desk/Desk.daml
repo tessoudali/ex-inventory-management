@@ -1,0 +1,48 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Desk.Desk where
+
+
+tradersToText : [Party] -> Text
+tradersToText traders = let textTraders = map show traders
+                        in case textTraders of
+                          [] -> ""
+                          x :: xs -> foldr (\ (ts : Text) (t : Text) -> ts <> ", " <> t) x xs
+
+template Desk
+  with
+    operator  : Party
+    deskHead  : Party
+    deskName  : Text
+    traders   : [Party]
+    observers : [Party]
+  where
+    signatory operator, deskHead
+
+    observer traders ++ observers
+
+    agreement tradersToText traders
+
+    controller [operator, deskHead] can
+      AddObserver : ContractId Desk
+        with
+          newObserver : Party
+        do
+          assert (notElem newObserver observers)
+          create this
+            with
+              observers = newObserver :: observers
+
+      AddTrader : ContractId Desk
+        with
+          newTrader : Party
+        do
+          assert (notElem newTrader traders)
+          create this
+            with
+              traders = newTrader :: traders

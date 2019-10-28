@@ -1,0 +1,104 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Actors.DeskHead where
+
+import Actors.Trader
+import Bitcoin.Types
+import Desk.Desk
+import Desk.Limit
+import Transfer.Notification
+import Transfer.Request
+
+
+template DeskHeadRole
+  with
+    operator          : Party
+    complianceOfficer : Party
+    deskHead          : Party
+    deskName          : Text
+  where
+    signatory operator, complianceOfficer, deskHead
+
+    agreement show deskHead <> " is the Head of the " <>
+              deskName <> " Desk."
+
+    controller deskHead can
+      nonconsuming AddTraderToDesk : ContractId TraderInvitation
+        with
+          trader  : Party
+          deskCid : ContractId Desk
+        do
+          desk <- fetch deskCid
+          assert (operator == desk.operator)
+          assert (deskHead == desk.deskHead)
+          assert (deskName == desk.deskName)
+          newDeskCid <- exercise deskCid Desk.Desk.AddObserver
+            with
+              newObserver = trader
+
+          create TraderInvitation
+            with
+              deskCid = newDeskCid
+              ..
+
+      nonconsuming IssueTransferLimit : ContractId TransferLimit
+        with
+          dayLimit : Satoshi
+        do
+          assert (dayLimit >= Satoshi 0)
+          create TransferLimit
+            with
+              used = Satoshi 0
+              ..
+
+      nonconsuming ApproveRequestOverLimits : (Either (ContractId FailedAddressCheckTransferRequest) (ContractId ValidatedTransferRequest), ContractId Notification)
+        with
+          failedRequestCid : ContractId FailedLimitsCheckTransferRequest
+          reason           : Text
+          observers        : [Party]
+        do
+          request <- fetch failedRequestCid
+          assert (operator == request.transferDetails.operator)
+          assert (deskHead == request.transferDetails.deskHead)
+
+          timeNow <- getTime
+
+          notificationCid <- create Notification
+            with
+              sender    = deskHead
+              text      = reason
+              observers = request.transferDetails.trader :: observers
+              timeStamp = timeNow
+          requestCid <- 
+            exercise failedRequestCid OverrideFailedLimits
+          return (requestCid, notificationCid)
+
+
+template DeskHeadInvitation
+  with
+    operator          : Party
+    complianceOfficer : Party
+    deskHead          : Party
+    deskName          : Text
+  where
+    signatory operator, complianceOfficer
+
+    controller deskHead can
+      AcceptDeskInvitation : (ContractId Desk, ContractId DeskHeadRole)
+        do
+          deskCid <- create Desk
+            with
+              traders   = []
+              observers = []
+              ..
+
+          deskHeadCid <- create DeskHeadRole
+            with
+              ..
+
+          return (deskCid, deskHeadCid)

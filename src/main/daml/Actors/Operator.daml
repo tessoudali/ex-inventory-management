@@ -1,0 +1,65 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Actors.Operator where
+
+import Actors.Compliance
+import Actors.SigningParty
+import Transfer.Transfer
+
+
+template OnboardEntityMaster
+  with
+    operator : Party
+  where
+    signatory operator
+
+    controller operator can
+      nonconsuming InviteSigningParty : ContractId SigningPartyInvitation
+        with
+          signingParty : Party
+        do
+          create SigningPartyInvitation
+            with
+              operator
+              signingParty
+
+      nonconsuming InviteCompliance : ContractId ComplianceInvitation
+        with
+          complianceOfficer : Party
+        do
+          create ComplianceInvitation
+            with
+              operator
+              complianceOfficer
+
+      nonconsuming RequestUTXOUpdate : ContractId UTXOUpdateRequest
+        do
+          create UTXOUpdateRequest
+            with
+              ..
+
+      nonconsuming RegisterUTXO : ContractId UTXO
+        with
+          utxoData : UTXOData
+        do
+          create UTXO
+            with
+              operator
+              observers = []
+              ..
+
+
+template UTXOUpdateRequest
+  with
+    operator : Party
+  where
+    signatory operator
+
+    controller operator can
+      AckUTXOUpdateRequest : ()
+        do return ()

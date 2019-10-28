@@ -1,0 +1,27 @@
+#
+# Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+#
+
+FROM ubuntu:14.04
+
+RUN apt-get update && \
+	apt-get install --yes software-properties-common && \
+	add-apt-repository --yes ppa:bitcoin/bitcoin && \
+	apt-get update && \
+	apt-get install --yes bitcoind make
+
+RUN adduser --disabled-login --gecos "" btcuser
+
+# run following commands from user's home directory
+WORKDIR /home/btcuser
+
+ADD src/main/resources/bitcoin.conf /home/btcuser/btcData/
+
+RUN chown -R btcuser:btcuser /home/btcuser/btcData
+
+USER btcuser
+
+WORKDIR /home/btcuser/btcData
+
+EXPOSE 19091
+CMD ["bitcoind","-datadir=/home/btcuser/btcData"]

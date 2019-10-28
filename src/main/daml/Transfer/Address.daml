@@ -1,0 +1,77 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Transfer.Address where
+
+import Bitcoin.Types
+
+type AddressKey = (Party, BitcoinAddress)
+
+data AddressReputation = Good
+                       | Bad
+                       | Unknown
+                       deriving (Eq, Show)
+
+template DestinationAddress
+  with
+    operator          : Party
+    complianceOfficer : Party
+    address           : BitcoinAddress
+    reputation        : AddressReputation
+    observers         : [Party]
+    tag               : Text
+  where
+    signatory operator, complianceOfficer
+
+    observer observers
+
+    agreement tag
+
+    key (operator, address): AddressKey
+    maintainer key._1
+
+    controller [operator, complianceOfficer] can
+      AddObserver : ContractId DestinationAddress
+        with
+          newObserver : Party
+        do
+          assert (notElem newObserver observers)
+          create this
+            with
+              observers = newObserver :: observers
+
+      ChangeReputation : ContractId DestinationAddress
+        with
+          newReputation : AddressReputation
+        do
+          assert (newReputation /= reputation)
+          create this
+            with
+              reputation = newReputation
+
+template OwnedAddress
+  with
+    operator     : Party
+    signingParty : Party
+    address      : BitcoinAddress
+    balance      : Satoshi
+    numTxs       : Int
+  where
+    signatory operator, signingParty
+
+    ensure balance >= Satoshi 0 && numTxs >= 0
+
+    controller operator can
+      UpdateBalance : ContractId OwnedAddress
+        with
+          newBalance : Satoshi
+          newNumTxs  : Int
+        do
+          create this
+            with
+              balance = newBalance
+              numTxs  = newNumTxs

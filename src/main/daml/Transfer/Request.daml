@@ -1,0 +1,149 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Transfer.Request where
+
+import Actors.SigningParty
+import Transfer.Address
+import Transfer.Transfer
+import Desk.Limit
+import Bitcoin.Types
+
+data TransferRequestResult = LimitFail (ContractId FailedLimitsCheckTransferRequest)
+  | ReputationFail (ContractId FailedAddressCheckTransferRequest)
+  | ValidationSuccess (ContractId ValidatedTransferRequest)
+
+fetchTxInputs : [ContractId UTXO] -> Update [UTXOData]
+fetchTxInputs utxoCids = do
+  utxos <- forA utxoCids \utxoCid -> fetch utxoCid
+  pure $ (\utxo -> utxo.utxoData) <$> utxos
+
+-- Returns a sublist of UTXOs enough to transfer (amount - acc).
+-- If there is no solution (not enough balance), returns the original list.
+sublistSummingUpToWith : Satoshi -> Satoshi -> [ContractId UTXO] -> Update [ContractId UTXO]
+sublistSummingUpToWith acc amount [] =
+  pure [] -- if acc < amount, we have a problem, but don't care
+sublistSummingUpToWith acc amount (utxoCid::utxoCids) =
+  if acc >= amount then
+    pure []
+  else do
+    utxo <- fetch utxoCid
+    subResult <- sublistSummingUpToWith (acc `plus` utxo.utxoData.value) amount utxoCids
+    pure (utxoCid :: subResult)
+
+-- Returns a sublist of UTXOs enough to transfer the amount.
+-- If there is no solution (not enough balance), returns the original list.
+sublistSummingUpTo : Satoshi -> [ContractId UTXO] -> Update [ContractId UTXO]
+sublistSummingUpTo amount utxoCids =
+    -- TODO? sort by utxoData.blockHeight ?
+    sublistSummingUpToWith (Satoshi 0) amount utxoCids
+
+isValidAddress : DestinationAddress -> Bool
+isValidAddress address = address.reputation == Good
+
+isWithinLimit : TransferDetails -> TransferLimit -> Bool
+isWithinLimit transferDetails limit = transferDetails.amount `plus` limit.used <= limit.dayLimit
+
+template UncheckedTransferRequest
+  with
+    transferDetails : TransferDetails
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller transferDetails.operator can
+      ValidateRequest : TransferRequestResult
+        do
+          (_, limit) <- fetchByKey @TransferLimit (transferDetails.operator, transferDetails.deskHead, transferDetails.deskName)
+
+          (_, destinationAddress) <- fetchByKey @DestinationAddress (transferDetails.operator, transferDetails.address)
+
+          if isWithinLimit transferDetails limit
+            then
+              if isValidAddress destinationAddress
+                then ValidationSuccess <$> (create ValidatedTransferRequest with ..)
+                else ReputationFail <$> (create FailedAddressCheckTransferRequest with ..)
+            else LimitFail <$> (create FailedLimitsCheckTransferRequest with ..)
+          -- trader can observe limit, reputations implicitly based on the resulting type
+
+template FailedLimitsCheckTransferRequest
+  with
+    transferDetails : TransferDetails
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller [transferDetails.operator, transferDetails.deskHead] can
+      OverrideFailedLimits : Either (ContractId FailedAddressCheckTransferRequest) (ContractId ValidatedTransferRequest)
+        do
+          (_, destinationAddress) <- fetchByKey @DestinationAddress (transferDetails.operator, transferDetails.address)
+          if isValidAddress destinationAddress
+            then Right <$> (create ValidatedTransferRequest with ..)
+            else Left <$> (create FailedAddressCheckTransferRequest with ..)
+
+template FailedAddressCheckTransferRequest
+  with
+    transferDetails : TransferDetails
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller [transferDetails.operator, transferDetails.complianceOfficer] can
+      OverrideFailedAddressCheckTransferRequest : ContractId ValidatedTransferRequest
+        do
+          create ValidatedTransferRequest with ..
+
+template ValidatedTransferRequest
+  with
+    transferDetails : TransferDetails
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller transferDetails.operator can
+      -- Prepares a new Transfer to be transmitted and also spends all UTXOs
+      PrepareToTransfer : Either (ContractId InsufficientTransferRequest) (ContractId NewTransfer)
+        with
+          signingPartyCid      : ContractId SigningPartyRole
+          fee                  : Satoshi
+          availableTxInputCids : [ContractId UTXO]
+        do
+          token <- fetch signingPartyCid
+          assert (transferDetails.operator == token.operator)
+          let amountToSpend = transferDetails.amount `plus` fee
+          txInputUtxoCids <- sublistSummingUpTo amountToSpend availableTxInputCids
+          txInputs <- fetchTxInputs txInputUtxoCids
+          if totalUnspentAmount txInputs >= amountToSpend
+          then do
+            (limitCid, _) <- fetchByKey @TransferLimit (transferDetails.operator, transferDetails.deskHead, transferDetails.deskName)
+            exercise limitCid IncreaseUsage with amount = amountToSpend
+            Right <$> create NewTransfer
+              with
+                signingParty = token.signingParty
+                ..
+          else Left <$> create InsufficientTransferRequest
+            with
+              ..
+
+template InsufficientTransferRequest
+  with
+      transferDetails : TransferDetails
+  where
+    signatory transferDetails.operator, transferDetails.complianceOfficer, transferDetails.deskHead, transferDetails.trader
+
+    ensure transferDetails.amount > Satoshi 0
+
+    controller transferDetails.operator can
+      Retry: ContractId UncheckedTransferRequest
+        do
+          create UncheckedTransferRequest
+            with
+              ..

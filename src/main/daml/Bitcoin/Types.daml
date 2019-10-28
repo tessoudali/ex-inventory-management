@@ -1,0 +1,22 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Bitcoin.Types where
+
+
+newtype Satoshi = Satoshi Int deriving (Eq, Show, Ord)
+
+plus (Satoshi x) (Satoshi y) = Satoshi (x+y)
+minus (Satoshi x) (Satoshi y) = Satoshi (x-y)
+
+newtype BitcoinAddress = BitcoinAddress Text deriving (Eq, Show, Ord)
+
+newtype RawTx = RawTx Text deriving (Eq, Show, Ord)
+
+newtype TxHash = TxHash Text deriving (Eq, Show, Ord)
+
+newtype ScriptPubKey = ScriptPubKey Text deriving (Eq, Show, Ord)

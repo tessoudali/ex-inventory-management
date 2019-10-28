@@ -1,0 +1,59 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Actors.Trader where
+
+import Bitcoin.Types
+import Desk.Desk
+import Transfer.Request
+import Transfer.Transfer
+
+template TraderRole
+  with
+    operator          : Party
+    complianceOfficer : Party
+    deskHead          : Party
+    trader            : Party
+    deskName          : Text
+  where
+    signatory operator, complianceOfficer, deskHead, trader
+    
+    controller trader can
+      nonconsuming RequestTransfer : ContractId UncheckedTransferRequest
+        with
+          amount  : Satoshi
+          address : BitcoinAddress
+        do
+            assert (amount > Satoshi 0)
+            let transferDetails = TransferDetails with ..
+            create UncheckedTransferRequest with transferDetails
+
+template TraderInvitation
+  with
+    operator          : Party
+    complianceOfficer : Party
+    deskHead          : Party
+    trader            : Party
+    deskCid           : ContractId Desk
+  where
+    signatory operator, complianceOfficer, deskHead
+
+    controller trader can
+      AcceptTraderInvitation : (ContractId TraderRole, ContractId Desk)
+        do
+          desk <- fetch deskCid
+          newDeskCid <-
+            exercise deskCid AddTrader
+              with
+                newTrader = trader
+
+          traderRoleCid <- create TraderRole
+            with
+              deskName = desk.deskName
+              ..
+
+          return (traderRoleCid, newDeskCid)

@@ -1,0 +1,51 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Desk.Limit where
+
+import Bitcoin.Types
+
+type LimitKey = (Party, Party, Text)
+
+template TransferLimit
+  with
+    operator      : Party
+    deskHead      : Party
+    deskName      : Text
+    dayLimit      : Satoshi
+    used          : Satoshi
+  where
+    signatory operator, deskHead
+
+    key (operator, deskHead, deskName): LimitKey
+    maintainer key._2
+
+    ensure dayLimit >= Satoshi 0 && used >= Satoshi 0
+
+    controller deskHead can
+      ChangeLimit : ContractId TransferLimit
+        with
+          newLimit : Satoshi
+        do
+          create this
+            with
+              dayLimit = newLimit
+
+    controller operator can
+      IncreaseUsage : ContractId TransferLimit
+        with
+          amount : Satoshi
+        do
+          create this
+            with
+              used = used `plus` amount
+
+      ResetUsage : ContractId TransferLimit
+        do
+          create this
+            with
+              used = Satoshi 0

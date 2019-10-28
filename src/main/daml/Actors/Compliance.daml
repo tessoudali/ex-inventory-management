@@ -1,0 +1,124 @@
+--
+-- Copyright (c) 2019, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+--
+
+daml 1.2
+
+module Actors.Compliance where
+
+import Actors.DeskHead
+
+import Bitcoin.Types
+import Transfer.Address
+import Transfer.Notification
+import Transfer.Request
+
+
+checkAddress : ComplianceRole -> DestinationAddress -> AddressReputation -> Bool
+checkAddress complianceRole address reputation =
+  reputation                       == address.reputation &&
+  complianceRole.operator          == address.operator &&
+  complianceRole.complianceOfficer == address.complianceOfficer
+
+
+template ComplianceRole
+  with
+    operator          : Party
+    complianceOfficer : Party
+  where
+    signatory operator, complianceOfficer
+
+    controller complianceOfficer can
+      nonconsuming RegisterNewAddress : ContractId DestinationAddress
+        with
+          address    : BitcoinAddress
+          reputation : AddressReputation
+          tag        : Text
+        do
+          create DestinationAddress
+            with
+              observers = []
+              ..
+
+      nonconsuming BlacklistAddress : ContractId DestinationAddress
+        with
+          addressCid : ContractId DestinationAddress
+        do
+          address <- fetch addressCid
+          assert (checkAddress this address Good)
+          exercise addressCid ChangeReputation
+              with
+                newReputation = Bad
+
+      nonconsuming WhitelistAddress : ContractId DestinationAddress
+        with
+          addressCid : ContractId DestinationAddress
+        do
+          address <- fetch addressCid
+          assert (checkAddress this address Bad)
+          exercise addressCid ChangeReputation
+              with
+                newReputation = Good
+
+      nonconsuming ApproveRequestToBadAddress : (ContractId ValidatedTransferRequest, ContractId Notification)
+        with
+          failedRequestCid : ContractId FailedAddressCheckTransferRequest
+          reason           : Text
+          observers        : [Party]
+        do
+          failedRequest <- fetch failedRequestCid
+          assert (operator == failedRequest.transferDetails.operator)
+          approvedRequestCid <- exercise failedRequestCid OverrideFailedAddressCheckTransferRequest
+
+          timeNow <- getTime
+
+          notificationCid <- create Notification
+            with
+              sender    = complianceOfficer
+              text      = reason
+              observers = failedRequest.transferDetails.trader :: observers
+              timeStamp = timeNow
+
+          return (approvedRequestCid, notificationCid)
+
+      nonconsuming AddObserverToAddress : ContractId DestinationAddress
+        with
+          newObserver : Party
+          addressCid  : ContractId DestinationAddress
+        do
+          address <- fetch addressCid
+          assert (operator == address.operator)
+          exercise addressCid AddObserver
+            with
+              newObserver
+
+    controller operator can
+      nonconsuming InviteDeskHead : ContractId DeskHeadInvitation
+        with
+          deskHead : Party
+          deskName : Text
+        do
+          create DeskHeadInvitation
+            with
+              operator
+              complianceOfficer
+              deskHead
+              deskName
+
+template ComplianceInvitation
+  with
+    operator          : Party
+    complianceOfficer : Party
+  where
+    signatory operator
+
+    controller complianceOfficer can
+      AcceptComplianceInvitation : ContractId ComplianceRole
+        do
+          complianceRoleCid <- create ComplianceRole
+            with
+              operator
+              complianceOfficer
+
+          return complianceRoleCid
