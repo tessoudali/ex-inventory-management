@@ -49,6 +49,9 @@ commands:
 
 jobs:
   blackduck_check:
+    parameters:
+      daml_sdk_version:
+        type: string
     executor: daml-executor
     steps:
       - checkout
@@ -56,11 +59,18 @@ jobs:
           keys:
             - m2-{{ checksum "pom.xml" }}-{{ checksum "daml.yaml" }}
             - m2
+      - install_sdk:
+          version: << parameters.daml_sdk_version >>
       - save_cache:
           paths:
             - ~/.m2
             - ~/.daml
           key: m2-{{ checksum "pom.xml" }}-{{ checksum "daml.yaml" }}
+      - run:
+          name: Maven Build
+          command: |
+            export PATH=${HOME}/.daml/bin:${PATH}
+            mvn clean package
       - run:
           name: Run Blackduck Detect
           command: |
@@ -158,6 +168,7 @@ workflows:
           daml_sdk_version: "0.13.34"
           bitcoin_cli_version: "0.18.1"
       - blackduck_check:
+          daml_sdk_version: "0.13.32"
           context: blackduck
   build_and_release:
     jobs:
