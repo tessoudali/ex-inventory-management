@@ -49,7 +49,7 @@ import transfer.transfer.UTXO;
 public class InventoryManagementIT {
   private static final Logger logger = LoggerFactory.getLogger(InventoryManagementIT.class);
   private static final Path RELATIVE_DAR_PATH = Paths.get("./target/inventory-management.dar");
-  private static final String TEST_MODULE = "Test.Test";
+  private static final String TEST_MODULE = "Test.OnboardingScript";
   private static final String TEST_SCENARIO = "onboarding";
 
   private static final Party OPERATOR_PARTY = new Party("Operator");
@@ -63,13 +63,7 @@ public class InventoryManagementIT {
       Sandbox.builder()
           .dar(RELATIVE_DAR_PATH)
           .module(TEST_MODULE)
-          .scenario(TEST_SCENARIO)
-          .parties(
-              OPERATOR_PARTY.getValue(),
-              SIGNINGPARTY_PARTY.getValue(),
-              TRADER_PARTY.getValue(),
-              COMPLIANCEOFFICER_PARTY.getValue(),
-              DESKHEAD_PARTY.getValue())
+          .startScript(TEST_SCENARIO)
           .setupAppCallback(
               client -> {
                 try {

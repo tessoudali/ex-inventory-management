@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-sdk-version: 0.13.54
+sdk-version: 1.0.1
 name: inventory-management
-source: src/main/daml/Test/Test.daml
-scenario: Test.Test:onboarding
+source: src/main/daml/
+init-script: Test.OnboardingScript:onboarding
 parties:
   - Operator
   - Trader1
@@ -14,8 +14,9 @@ parties:
   - DeskHead
   - ComplianceOfficer
   - SigningParty
-version: 1.0.0
+version: 1.0.1
 exposed-modules: []
 dependencies:
   - daml-prim
   - daml-stdlib
+  - daml-script
