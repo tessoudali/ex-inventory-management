@@ -92,9 +92,9 @@ public class UTXOUpdaterBot {
                   newTxHashes.add(utxoData);
 
                   if (oldTxHashes.contains(utxoData)) {
-                    logger.debug("{} already exists", format(utxoData));
+                    logger.info("{} already exists", format(utxoData));
                   } else {
-                    logger.debug("Found new {}", format(utxoData));
+                    logger.info("Found new {}", format(utxoData));
                     Command command = operatorCid.exerciseRegisterUTXO(utxoData);
                     builder.addCommand(command);
                   }
@@ -135,8 +135,8 @@ public class UTXOUpdaterBot {
   private static Set<UTXOData> getExistingHashes(Map<String, UTXO> utxoMap) {
     Set<UTXOData> existingTxHashes =
         utxoMap.values().stream().map(utxo -> utxo.utxoData).collect(Collectors.toSet());
-    logger.debug("Existing Hashes: ");
-    existingTxHashes.forEach(h -> logger.debug(format(h)));
+    logger.info("Existing Hashes: ");
+    existingTxHashes.forEach(h -> logger.info(format(h)));
     return existingTxHashes;
   }
 }
