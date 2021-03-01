@@ -227,6 +227,7 @@ public class InventoryManagementIT {
     assertEquals(transferAmount, destinationBalance);
   }
 
+  @Ignore("Rarely fails on CircleCI with AssertionError: expected:<1000000> but was:<4999980000>")
   @Test
   public void testProperPaymentWithinOwnedWallet() throws Exception {
     ledgerAdapter.exerciseChoice(
@@ -254,6 +255,9 @@ public class InventoryManagementIT {
     Map<String, Long> currentOwnedBalances = assertUpdatedOwnBalanceEquals(expectedOwnedBalance);
 
     long destinationBalance = currentOwnedBalances.get(goodAddress.address.unpack);
+
+    // Rarely fails with  AssertionError: expected:<1000000> but was:<4999980000>
+    // (internal issue: https://digitalasset.atlassian.net/browse/ERA-917)
     assertEquals(transferAmount, destinationBalance);
 
     long expectedChangeAddressBalance = (initialMiningReward - transferAmount - transactionFee);
