@@ -34,7 +34,7 @@ commands:
     steps:
       - slack/status:
           fail_only: true
-          only_for_branches: master
+          only_for_branches: main
           webhook: '${SLACK_WEBHOOK}'
   install_bitcoin:
     description: "Install the Bitcoin CLI tools"
@@ -152,12 +152,13 @@ jobs:
       - run:
           name: Blackduck detect
           command: |
-            bash <(curl -s https://raw.githubusercontent.com/DACH-NY/security-blackduck/master/synopsys-detect) ci-build digitalasset_ex-inventory-management master \
+            bash <(curl -s https://raw.githubusercontent.com/DACH-NY/security-blackduck/master/synopsys-detect) \
+            ci-build digitalasset_ex-inventory-management main \
             --logging.level.com.synopsys.integration=DEBUG \
             --detect.notices.report=true \
             --detect.timeout=3600
       - run:
-          command: cp digitalasset_ex_inventory_management_master_Black_Duck_Notices_Report.txt NOTICE
+          command: cp digitalasset_ex_inventory_management_main_Black_Duck_Notices_Report.txt NOTICE
       - persist_to_workspace:
           root: .
           paths:
@@ -184,7 +185,7 @@ workflows:
           filters:
             branches:
               only:
-                - master
+                - main
     jobs:
       - daml_test:
           daml_sdk_version: "1.11.1"
